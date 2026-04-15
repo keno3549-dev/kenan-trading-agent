@@ -18,101 +18,90 @@ SYMBOLS = [
     "YKBNK1", "VAKBN1"
 ]
 
-def calculate_levels(price):
-    """Calculate Entry, SL, TP levels"""
-    entry = price
-    sl = price * 0.98
-    tp1 = price * 1.015
-    tp2 = price * 1.03
-    tp3 = price * 1.05
-    
-    return {
-        "entry": round(entry, 2),
-        "sl": round(sl, 2),
-        "tp1": round(tp1, 2),
-        "tp2": round(tp2, 2),
-        "tp3": round(tp3, 2)
-    }
-
-def send_telegram_message(message):
-    """Send message to Telegram"""
+def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    data = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
     try:
         requests.post(url, data=data)
-        print(f"✅ Message sent")
+        print(f"✅ Sent")
     except Exception as e:
         print(f"❌ Error: {e}")
 
 @app.route('/webhook', methods=['POST'])
-def tradingview_webhook():
-    """Receive TradingView Alert"""
-    
+def webhook():
     try:
         data = request.json
-        print(f"✅ TradingView Alert: {data}")
+        print(f"✅ Alert: {data}")
         
         symbol = data.get("symbol", "UNKNOWN")
         close = float(data.get("close", 0))
+        atr = float(data.get("atr", 0))
+        signal_type = data.get("type", "UNKNOWN")
         
-        levels = calculate_levels(close)
+        if signal_type == "LONG":
+            sl = close - (atr * 1.5)
+            tp = close + (close * 0.0618)
+            emoji = "🟢"
+            type_text = "LONG"
+        else:
+            sl = close + (atr * 1.5)
+            tp = close - (close * 0.0618)
+            emoji = "🔴"
+            type_text = "SHORT"
         
-        message = f"""🟢 {symbol} - LONG SINYALI
+        risk = abs(close - sl)
+        profit = abs(tp - close)
+        ratio = profit / risk if risk > 0 else 0
+        
+        message = f"""🕵️‍♂️ VİOP Ajanları
 
-💰 Fiyat: {close:.2f} TL
-📊 Market Structure: Bulish
+🔔 {symbol} | 15DK
+
+{emoji} {type_text} Sinyali
+
+💰 Giriş: {close:.2f} TL
+🚀 Market Structure: Bullish
 🎯 Harmonic: Gartley D Point
-✅ Güven: 95%
-📋 Risk/Ödül: 1:2.5
+🛟 Güven: 95%
+🏆 Risk/Ödül: 1:{ratio:.1f}
 
 📍 ISLEM SEVIYELERI:
-Entry: {levels['entry']} TL
-🛑 SL: {levels['sl']} TL
-🎯 TP1: {levels['tp1']} TL
-🎯 TP2: {levels['tp2']} TL
-🎯 TP3: {levels['tp3']} TL"""
+Giriş: {close:.2f} TL
+🛑 SL: {sl:.2f} TL
+🎯 TP: {tp:.2f} TL"""
         
-        send_telegram_message(message)
+        send_telegram(message)
         
-        return {"status": "received", "symbol": symbol}, 200
+        return {"status": "ok", "symbol": symbol}, 200
     
     except Exception as e:
-        print(f"❌ Webhook Error: {e}")
+        print(f"❌ Error: {e}")
         return {"error": str(e)}, 400
 
 @app.route('/health', methods=['GET'])
 def health():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}, 200
+    return {"status": "healthy"}, 200
 
-def startup_message():
-    """Send startup message"""
-    startup_msg = f"""🕵️‍♂️ Kenan VİOP Ajanları
+def startup():
+    msg = f"""🕵️‍♂️ VİOP Ajanları
 
 🔍 Analiz edildi: {len(SYMBOLS)} Hisse
 
 ⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 """
+    for i, s in enumerate(SYMBOLS, 1):
+        msg += f"{i}. {s}\n"
     
-    for i, symbol in enumerate(SYMBOLS, 1):
-        startup_msg += f"{i}. {symbol}\n"
-    
-    startup_msg += f"""
+    msg += f"""
 Durumu: ✅ HAZIR
 Minimum Güven: 90%
 Risk/Ödül: Min 1:2"""
     
-    send_telegram_message(startup_msg)
+    send_telegram(msg)
 
 if __name__ == "__main__":
-    print("🚀 Kenan VİOP Ajanları Started")
-    print(f"✅ Flask Server Running on 0.0.0.0:5000")
-    
-    startup_message()
-    
+    print("🚀 Started")
+    startup()
     app.run(host="0.0.0.0", port=5000)
 
