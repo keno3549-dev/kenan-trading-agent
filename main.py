@@ -2,15 +2,19 @@ import os
 import requests
 from datetime import datetime
 import json
+from flask import Flask, request
 from analyzers.market_structure import MarketStructureAnalyzer
 from analyzers.multi_timeframe import MultiTimeframeAnalyzer
 from analyzers.harmonic_patterns import HarmonicPatternAnalyzer
 from analyzers.price_action_blocks import PriceActionAnalyzer
 from signals.signal_generator import SignalGenerator
+import threading
 
 # Configuration
 TELEGRAM_BOT_TOKEN = "8728759391:AAHWoSWrVMg_VP2yi2P-f-RERefQG-eMeuY"
 TELEGRAM_CHAT_ID = "-5196400496"
+
+app = Flask(__name__)
 
 SYMBOLS = [
     "GARAN1", "AKBNK1", "AEFES1", "ASTOR1", "ASELS1", "BIMAS1",
@@ -31,101 +35,47 @@ def send_telegram_message(message):
     }
     try:
         requests.post(url, data=data)
-        print(f"✅ Message sent: {message[:50]}...")
+        print(f"✅ Message sent")
     except Exception as e:
-        print(f"❌ Error sending message: {e}")
+        print(f"❌ Error: {e}")
 
-def format_signal_message(signal_data):
-    """Format signal data for Telegram"""
-    
-    symbol = signal_data.get("symbol", "UNKNOWN")
-    signal = signal_data.get("signal", "WAIT")
-    confidence = signal_data.get("confidence", 0)
-    tier = signal_data.get("tier", "UNKNOWN")
-    
-    if signal == "WAIT":
-        reason = signal_data.get("reason", "No setup")
-        return f"⏳ {symbol}: WAIT ({confidence}%) - {reason}"
-    
-    entry = signal_data.get("entry", 0)
-    tp1 = signal_data.get("tp1", 0)
-    tp2 = signal_data.get("tp2", 0)
-    tp3 = signal_data.get("tp3", 0)
-    sl = signal_data.get("sl", 0)
-    rr = signal_data.get("risk_reward", 0)
-    confluence = signal_data.get("confluence", [])
-    
-    emoji = "🟢" if signal == "LONG" else "🔴"
-    
-    message = f"""{emoji} <b>{symbol} - {signal}</b>
-
-📊 <b>Tier:</b> {tier}
-📈 <b>Confidence:</b> {confidence}%
-
-💰 <b>Entry:</b> {entry:.2f}
-🎯 <b>TP1:</b> {tp1:.2f}
-🎯 <b>TP2:</b> {tp2:.2f}
-🎯 <b>TP3:</b> {tp3:.2f}
-🛑 <b>SL:</b> {sl:.2f}
-
-📋 <b>R:R:</b> 1:{rr:.1f}
-
-✅ <b>Confluence:</b>
-"""
-    
-    for item in confluence:
-        message += f"  • {item}\n"
-    
-    message += f"\n⏰ {datetime.now().strftime('%H:%M:%S')}"
-    
-    return message
-
-def analyze_symbol(symbol, prices_4h, prices_1h, volumes_1h, current_price):
-    """Analyze single symbol across all timeframes"""
+@app.route('/webhook', methods=['POST'])
+def tradingview_webhook():
+    """Receive TradingView Alert"""
     
     try:
-        # Initialize analyzers
-        ms_analyzer = MarketStructureAnalyzer(prices_4h)
-        mtf_analyzer = MultiTimeframeAnalyzer(prices_1h)
-        harmonic_analyzer = HarmonicPatternAnalyzer(prices_4h)
-        pa_analyzer = PriceActionAnalyzer(prices_1h, volumes_1h)
-        signal_gen = SignalGenerator(min_confidence=90)
+        data = request.json
         
-        # Run analysis
-        ms_result = ms_analyzer.analyze(current_price)
-        mtf_result = mtf_analyzer.analyze(current_price)
-        harmonic_result = harmonic_analyzer.analyze()
-        pa_result = pa_analyzer.analyze(current_price)
-        volume_result = pa_result.get("volume", {})
+        print(f"✅ TradingView Alert: {data}")
         
-        # Generate signal
-        signal = signal_gen.generate_signal(
-            symbol=symbol,
-            market_structure=ms_result,
-            multi_timeframe=mtf_result,
-            harmonic=harmonic_result,
-            price_action=pa_result,
-            current_price=current_price,
-            volume=volume_result
-        )
+        symbol = data.get("symbol", "UNKNOWN")
+        close = float(data.get("close", 0))
+        volume = float(data.get("volume", 0))
         
-        return signal
+        message = f"""📊 <b>TradingView Alert Geldi</b>
+
+Symbol: <b>{symbol}</b>
+Price: {close}
+Volume: {volume}
+⏰ {datetime.now().strftime('%H:%M:%S')}
+
+🔍 Analiz edililiyor..."""
+        
+        send_telegram_message(message)
+        
+        return {"status": "received", "symbol": symbol}, 200
     
     except Exception as e:
-        print(f"❌ Error analyzing {symbol}: {e}")
-        return None
+        print(f"❌ Webhook Error: {e}")
+        return {"error": str(e)}, 400
 
-def main():
-    """Main trading agent loop"""
-    
-    print("🚀 Kenan VİOP Ajanları Started")
-    print(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"📊 Monitoring {len(SYMBOLS)} symbols")
-    print("\n📋 SYMBOLS:")
-    for symbol in SYMBOLS:
-        print(f"   • {symbol}")
-    
-    # Send startup message
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check"""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}, 200
+
+def startup_message():
+    """Send startup message"""
     startup_msg = f"""🕵️‍♂️ <b>Kenan VİOP Ajanları</b>
 
 🔍 <b>Analiz edildi: {len(SYMBOLS)} Hisse</b>
@@ -139,16 +89,21 @@ def main():
     
     startup_msg += f"""
 <b>Durumu:</b> ✅ HAZIR
-<b>Sonraki Tarama:</b> Her 4 Saate
+<b>Mode:</b> 🌐 TradingView Webhook
 <b>Minimum Güven:</b> 90%
-<b>Risk/Reward:</b> Min 1:2"""
+<b>Risk/Reward:</b> Min 1:2
+<b>Port:</b> 5000"""
     
     send_telegram_message(startup_msg)
-    
-    print("\n✅ Agent running successfully!")
-    print("⏳ Waiting for market data...")
-    print("📡 Ready to send signals when conditions are MET (90%+ confidence only)")
 
 if __name__ == "__main__":
-    main()
+    print("🚀 Kenan VİOP Ajanları Started")
+    print(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"📊 Monitoring {len(SYMBOLS)} symbols")
+    print("\n✅ Flask Server Running on 0.0.0.0:5000")
+    print("📡 Waiting for TradingView alerts...")
+    
+    startup_message()
+    
+    app.run(host="0.0.0.0", port=5000)
 
