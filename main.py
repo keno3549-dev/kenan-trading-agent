@@ -3,6 +3,10 @@ import requests
 from datetime import datetime
 import json
 from flask import Flask, request
+from analyzers.market_structure import analyze_market_structure
+from analyzers.harmonic_patterns import analyze_harmonic_patterns
+from analyzers.price_action import analyze_price_action
+from analyzers.confluence_scorer import score_confluence
 
 TELEGRAM_BOT_TOKEN = "8728759391:AAHWoSWrVMg_VP2yi2P-f-RERefQG-eMeuY"
 TELEGRAM_CHAT_ID = "-5196400496"
@@ -38,6 +42,20 @@ def webhook():
         atr = float(data.get("atr", 0))
         signal_type = data.get("type", "UNKNOWN")
         
+        # Mock data (TradingView'dan gerçek veri gelince güncellenecek)
+        mock_data = {
+            'close': [close - 2, close - 1.5, close - 1, close - 0.5, close],
+            'high': [close + 0.5, close + 0.3, close + 0.2, close + 0.4, close + 0.1],
+            'low': [close - 0.5, close - 0.3, close - 0.2, close - 0.4, close - 0.1],
+            'volume': [1000000, 1100000, 950000, 1050000, 1200000]
+        }
+        
+        # Analyze
+        ms = analyze_market_structure(mock_data)
+        harmonic = analyze_harmonic_patterns(mock_data)
+        pa = analyze_price_action(mock_data)
+        conf = score_confluence(ms, harmonic, pa, atr)
+        
         if signal_type == "LONG":
             sl = close - (atr * 1.5)
             tp = close + (close * 0.0618)
@@ -60,19 +78,21 @@ def webhook():
 {emoji} {type_text} Sinyali
 
 💰 Giriş: {close:.2f} TL
-🚀 Market Structure: Bullish
-🎯 Harmonic: Gartley D Point
-🛟 Güven: 95%
+🚀 Market Structure: {ms.get('trend')}
+🎯 Harmonic: {harmonic.get('pattern')}
+🛟 Güven: {conf.get('confidence'):.0f}%
 🏆 Risk/Ödül: 1:{ratio:.1f}
 
 📍 ISLEM SEVIYELERI:
 Giriş: {close:.2f} TL
 🛑 SL: {sl:.2f} TL
-🎯 TP: {tp:.2f} TL"""
+🎯 TP: {tp:.2f} TL
+
+📊 Analiz: {', '.join(conf.get('details', []))}"""
         
         send_telegram(message)
         
-        return {"status": "ok", "symbol": symbol}, 200
+        return {"status": "ok", "symbol": symbol, "confidence": conf.get('confidence')}, 200
     
     except Exception as e:
         print(f"❌ Error: {e}")
