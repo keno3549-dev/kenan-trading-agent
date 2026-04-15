@@ -7,6 +7,7 @@ from analyzers.market_structure import analyze_market_structure
 from analyzers.harmonic_patterns import analyze_harmonic_patterns
 from analyzers.price_action import analyze_price_action
 from analyzers.confluence_scorer import score_confluence
+from symbol_scanner import scan_symbols, send_telegram
 
 TELEGRAM_BOT_TOKEN = "8728759391:AAHWoSWrVMg_VP2yi2P-f-RERefQG-eMeuY"
 TELEGRAM_CHAT_ID = "-5196400496"
@@ -22,15 +23,6 @@ SYMBOLS = [
     "YKBNK1", "VAKBN1"
 ]
 
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-    try:
-        requests.post(url, data=data)
-        print(f"✅ Sent")
-    except Exception as e:
-        print(f"❌ Error: {e}")
-
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
@@ -42,7 +34,6 @@ def webhook():
         atr = float(data.get("atr", 0))
         signal_type = data.get("type", "UNKNOWN")
         
-        # Mock data (TradingView'dan gerçek veri gelince güncellenecek)
         mock_data = {
             'close': [close - 2, close - 1.5, close - 1, close - 0.5, close],
             'high': [close + 0.5, close + 0.3, close + 0.2, close + 0.4, close + 0.1],
@@ -50,7 +41,6 @@ def webhook():
             'volume': [1000000, 1100000, 950000, 1050000, 1200000]
         }
         
-        # Analyze
         ms = analyze_market_structure(mock_data)
         harmonic = analyze_harmonic_patterns(mock_data)
         pa = analyze_price_action(mock_data)
@@ -86,9 +76,7 @@ def webhook():
 📍 ISLEM SEVIYELERI:
 Giriş: {close:.2f} TL
 🛑 SL: {sl:.2f} TL
-🎯 TP: {tp:.2f} TL
-
-📊 Analiz: {', '.join(conf.get('details', []))}"""
+🎯 TP: {tp:.2f} TL"""
         
         send_telegram(message)
         
@@ -96,6 +84,14 @@ Giriş: {close:.2f} TL
     
     except Exception as e:
         print(f"❌ Error: {e}")
+        return {"error": str(e)}, 400
+
+@app.route('/scan', methods=['GET'])
+def scan():
+    try:
+        signals = scan_symbols()
+        return {"signals": signals, "count": len(signals)}, 200
+    except Exception as e:
         return {"error": str(e)}, 400
 
 @app.route('/health', methods=['GET'])
